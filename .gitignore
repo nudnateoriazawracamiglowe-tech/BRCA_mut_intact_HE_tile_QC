@@ -1,0 +1,15 @@
+# Environments and IDEs
+venv/
+.vs/
+
+# Data and Logs (assuming they are in an 'input' folder)
+input/
+*.log
+
+# Or, if you want to target specific extensions globally:
+*.jpg
+*.zip
+*.png
+*.txt
+*.xlsx
+*.exe
