@@ -4,10 +4,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from skimage.io import imread
 from stardist.models import StarDist2D
-from umap import UMAP
+from umap import UMAPc
 
 # 1. Load a sample H&E image
-img = imread("images/sample_image.tif")
+img = imread("C:/Users/qlptc/OneDrive/Desktop/BRCA_mut_intact_HE_tile_QC/_HE_tiles_")
 
 # 2. Segment nuclei using StarDist
 model = StarDist2D.from_pretrained('2D_versatile_fluo')

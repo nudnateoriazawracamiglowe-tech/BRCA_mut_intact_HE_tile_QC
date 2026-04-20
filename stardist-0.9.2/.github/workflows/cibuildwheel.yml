@@ -1,0 +1,238 @@
+# adapted from:
+# - https://github.com/pypa/cibuildwheel/blob/main/examples/github-deploy.yml
+# - https://github.com/scikit-learn/scikit-learn/blob/main/.github/workflows/wheels.yml
+# - https://github.com/scikit-learn/scikit-learn/blob/main/build_tools/wheels/build_wheels.sh
+# - https://github.com/scikit-image/scikit-image/blob/main/.github/workflows/wheels-recipe.yaml
+
+# some openmp-related links:
+# - https://github.com/conda-forge/staged-recipes/pull/17766
+# - https://conda-forge.org/docs/maintainer/knowledge_base/#openmp
+# - https://web.archive.org/web/20250805174041/https://scikit-learn.org/dev/developers/advanced_installation.html#macos
+# - https://mac.r-project.org/openmp/
+# - https://github.com/RcppCore/RcppArmadillo/issues/493
+# - https://stackoverflow.com/questions/79837494/openmp-scheduledynamic-fails-in-rcppeigen-on-macos-sequoia-15-6-1-symbol-not
+
+
+name: Build and upload to PyPI
+
+on:
+  push:
+    branches:
+      - wheels
+  release:
+    types:
+      - published
+
+jobs:
+
+
+  build_wheels:
+    name: Build cp${{ matrix.python }}-${{ matrix.platform_id }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    # for conda-incubator/setup-miniconda to work
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - os: ubuntu-latest
+            python: 36
+            platform_id: manylinux_x86_64
+          - os: ubuntu-latest
+            python: 37
+            platform_id: manylinux_x86_64
+            # cibw_test_requires: 'pytest tensorflow urllib3<2' # ImportError: urllib3 v2.0 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'OpenSSL 1.0.2k-fips  26 Jan 2017'. See: https://github.com/urllib3/urllib3/issues/2168
+          - os: ubuntu-latest
+            python: 38
+            platform_id: manylinux_x86_64
+          - os: ubuntu-latest
+            python: 39
+            platform_id: manylinux_x86_64
+          - os: ubuntu-latest
+            python: 310
+            platform_id: manylinux_x86_64
+          - os: ubuntu-latest
+            python: 311
+            platform_id: manylinux_x86_64
+          - os: ubuntu-latest
+            python: 312
+            platform_id: manylinux_x86_64
+          - os: ubuntu-latest
+            python: 313
+            platform_id: manylinux_x86_64
+          # Windows
+          - os: windows-latest
+            python: 36
+            platform_id: win_amd64
+          - os: windows-latest
+            python: 37
+            platform_id: win_amd64
+          - os: windows-latest
+            python: 38
+            platform_id: win_amd64
+          - os: windows-latest
+            python: 39
+            platform_id: win_amd64
+          - os: windows-latest
+            python: 310
+            platform_id: win_amd64
+          - os: windows-latest
+            python: 311
+            platform_id: win_amd64
+          - os: windows-latest
+            python: 312
+            platform_id: win_amd64
+          - os: windows-latest
+            python: 313
+            platform_id: win_amd64
+          # macOS x86_64 (no tensorflow x86_64 wheels for python 3.13+)
+          - os: macos-15-intel
+            python: 36
+            platform_id: macosx_x86_64
+          - os: macos-15-intel
+            python: 37
+            platform_id: macosx_x86_64
+          - os: macos-15-intel
+            python: 38
+            platform_id: macosx_x86_64
+          - os: macos-15-intel
+            python: 39
+            platform_id: macosx_x86_64
+          - os: macos-15-intel
+            python: 310
+            platform_id: macosx_x86_64
+          - os: macos-15-intel
+            python: 311
+            platform_id: macosx_x86_64
+          - os: macos-15-intel
+            python: 312
+            platform_id: macosx_x86_64
+          # macOS arm64 (wheels can only be built for python 3.8+)
+          - os: macos-14
+            python: 38
+            platform_id: macosx_arm64
+            # note: cannot be tested by cibuildwheel, cf. https://github.com/pypa/cibuildwheel/pull/1169
+          - os: macos-14
+            python: 39
+            platform_id: macosx_arm64
+          - os: macos-14
+            python: 310
+            platform_id: macosx_arm64
+          - os: macos-14
+            python: 311
+            platform_id: macosx_arm64
+          - os: macos-14
+            python: 312
+            platform_id: macosx_arm64
+          - os: macos-14
+            python: 313
+            platform_id: macosx_arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        if: ${{ startsWith(matrix.platform_id, 'macosx') }}
+        with:
+          miniforge-version: latest
+
+      - name: Build and test wheels
+        run: |
+          set -ex
+          # follow approach of scikit-learn: https://github.com/scikit-learn/scikit-learn/blob/7f0900c265936eac9a89bba37eb19ee66208d46a/build_tools/wheels/build_wheels.sh
+          if [[ $(uname) == "Darwin" ]]; then
+            if [[ "$CIBW_BUILD" == *-macosx_arm64 ]]; then
+              # SciPy requires 12.0 on arm to prevent kernel panics
+              # https://github.com/scipy/scipy/issues/14688
+              export MACOSX_DEPLOYMENT_TARGET=12.0
+              OPENMP_URL="https://anaconda.org/conda-forge/llvm-openmp/11.1.0/download/osx-arm64/llvm-openmp-11.1.0-hf3c4609_1.tar.bz2"
+            else
+              export MACOSX_DEPLOYMENT_TARGET=10.9
+              OPENMP_URL="https://anaconda.org/conda-forge/llvm-openmp/11.1.0/download/osx-64/llvm-openmp-11.1.0-hda6cdc1_1.tar.bz2"
+            fi
+            echo MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}
+
+            conda create -n build $OPENMP_URL
+            PREFIX="$HOME/miniconda3/envs/build"
+            export CC=/usr/bin/clang
+            export CXX=/usr/bin/clang++
+            export CFLAGS="$CFLAGS -I$PREFIX/include"
+            export CXXFLAGS="$CXXFLAGS -I$PREFIX/include"
+            export LDFLAGS="$LDFLAGS -Wl,-rpath,$PREFIX/lib -L$PREFIX/lib -lomp"
+          fi
+
+          # cibuildwheel 3.x only works with python 3.8+
+          python -m pip install "cibuildwheel${{ contains(fromJSON('["36", "37"]'), matrix.python) && '<3' || '>=3' }}"
+          python -m cibuildwheel --output-dir dist
+        env:
+          CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
+          CIBW_ARCHS: all
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_BUILD_VERBOSITY: 1
+          CIBW_TEST_REQUIRES: "${{ matrix.cibw_test_requires || 'pytest tensorflow' }}"
+          CIBW_TEST_COMMAND: pytest -v -m "not gpu" {project}
+          # CIBW_TEST_SKIP: "*"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v5
+        with:
+          name: cibw-wheels-cp${{ matrix.python }}-${{ matrix.platform_id }}
+          path: dist/*.whl
+
+
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Build sdist
+        run: pipx run build --sdist
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v5
+        with:
+          name: cibw-sdist
+          path: dist/*.tar.gz
+
+
+  upload_pypi:
+    name: Upload to PyPI
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'published'
+    steps:
+      - name: Download wheels and sdist
+        uses: actions/download-artifact@v6
+        with:
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+
+      - name: Check that package version matches git tag ${{ github.ref_name }}
+        shell: bash
+        run: |
+          ls -l dist
+          test -f "dist/stardist-${{ github.ref_name }}.tar.gz"
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          verbose: true
+          # password: ${{ secrets.TESTPYPI_API_TOKEN }}
+          # repository-url: https://test.pypi.org/legacy/
